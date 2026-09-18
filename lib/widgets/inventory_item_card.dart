@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/inventory_item.dart';
 import '../models/item_category.dart';
+import '../theme/app_theme.dart';
 
 class InventoryItemCard extends StatelessWidget {
   final InventoryItem item;
@@ -21,7 +22,7 @@ class InventoryItemCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isLow = item.quantity == 0;
+    final isOutOfStock = item.quantity == 0;
     return Dismissible(
       key: ValueKey(item.id),
       direction: DismissDirection.endToStart,
@@ -37,80 +38,119 @@ class InventoryItemCard extends StatelessWidget {
       ),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppColors.surfaceContainerLowest,
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 10,
+              blurRadius: 12,
               offset: const Offset(0, 4),
             ),
           ],
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
-              radius: 24,
-              backgroundColor: item.category.color.withValues(alpha: 0.15),
-              child: Icon(item.category.icon, color: item.category.color),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.name,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600,
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 24,
+                  backgroundColor: item.category.bgColor,
+                  child: Icon(item.category.icon, color: item.category.iconColor),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.name,
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: item.category.bgColor,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          item.category.label,
+                          style: TextStyle(
+                            color: item.category.labelColor,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _RoundIconButton(
+                  icon: Icons.remove,
+                  enabled: !isOutOfStock,
+                  onTap: onDecrement,
+                ),
+                SizedBox(
+                  width: 30,
+                  child: Text(
+                    '${item.quantity}',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.bold,
+                      color: isOutOfStock ? AppColors.alert : AppColors.onSurface,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  if (isLow)
-                    GestureDetector(
-                      onTap: onAddToShoppingList,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.add_shopping_cart,
-                              size: 14, color: Colors.red.shade400),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Sin stock · agregar a la lista',
-                            style: TextStyle(
-                              color: Colors.red.shade400,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  else
-                    Text(
-                      item.category.label,
-                      style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
-                    ),
-                ],
-              ),
+                ),
+                _RoundIconButton(
+                  icon: Icons.add,
+                  enabled: true,
+                  filled: true,
+                  onTap: onIncrement,
+                ),
+              ],
             ),
-            _RoundIconButton(icon: Icons.remove, onTap: onDecrement),
-            SizedBox(
-              width: 32,
-              child: Center(
-                child: Text(
-                  '${item.quantity}',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+            if (isOutOfStock) ...[
+              const SizedBox(height: 10),
+              Material(
+                color: AppColors.alertContainer.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: onAddToShoppingList,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Row(
+                      children: [
+                        Icon(Icons.warning_amber_rounded, size: 18, color: AppColors.alert),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Sin stock · Toca para agregar a la lista',
+                            style: TextStyle(
+                              color: AppColors.alert,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        CircleAvatar(
+                          radius: 13,
+                          backgroundColor: AppColors.surfaceContainerLowest,
+                          child: Icon(Icons.add_shopping_cart, size: 14, color: AppColors.alert),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-            _RoundIconButton(icon: Icons.add, onTap: onIncrement),
+            ],
           ],
         ),
       ),
@@ -120,25 +160,35 @@ class InventoryItemCard extends StatelessWidget {
 
 class _RoundIconButton extends StatelessWidget {
   final IconData icon;
+  final bool enabled;
+  final bool filled;
   final VoidCallback onTap;
 
-  const _RoundIconButton({required this.icon, required this.onTap});
+  const _RoundIconButton({
+    required this.icon,
+    required this.onTap,
+    this.enabled = true,
+    this.filled = false,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final color = filled
+        ? AppColors.primaryContainer
+        : (enabled ? AppColors.surfaceContainerHigh : AppColors.surfaceContainer);
+    final iconColor = filled
+        ? Colors.white
+        : (enabled ? AppColors.onSurface : AppColors.outline);
+
     return Material(
-      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+      color: color,
       shape: const CircleBorder(),
       child: InkWell(
         customBorder: const CircleBorder(),
-        onTap: onTap,
+        onTap: enabled ? onTap : null,
         child: Padding(
           padding: const EdgeInsets.all(10),
-          child: Icon(
-            icon,
-            size: 20,
-            color: Theme.of(context).colorScheme.primary,
-          ),
+          child: Icon(icon, size: 18, color: enabled || filled ? iconColor : iconColor.withValues(alpha: 0.5)),
         ),
       ),
     );

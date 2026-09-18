@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/inventory_item.dart';
 import '../models/shopping_item.dart';
 import '../services/storage_service.dart';
+import '../theme/app_theme.dart';
 import '../widgets/add_item_sheet.dart';
 import '../widgets/shopping_item_tile.dart';
 
@@ -32,12 +33,19 @@ class ShoppingListScreenState extends State<ShoppingListScreen> {
     });
   }
 
+  /// Re-reads from storage. Needed because this screen and the inventory
+  /// both stay alive inside an IndexedStack, so a change made from one
+  /// (e.g. "add to my inventory") won't show up on the other until it
+  /// reloads.
+  Future<void> reload() => _load();
+
   Future<void> _persist() => _storage.saveShoppingList(_items);
 
   Future<void> addItem() async {
     final result = await showAddItemSheet(
       context,
       title: '¿Qué te falta?',
+      subtitle: 'Se agregará a tu lista de compras',
     );
     if (result == null) return;
     setState(() {
@@ -47,7 +55,12 @@ class ShoppingListScreenState extends State<ShoppingListScreen> {
         category: result.category,
       ));
     });
-    _persist();
+    await _persist();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('"${result.name}" agregado a tu lista')),
+      );
+    }
   }
 
   void _toggle(ShoppingItem item, bool? value) {
@@ -105,8 +118,10 @@ class ShoppingListScreenState extends State<ShoppingListScreen> {
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
+        _Header(pendingCount: pending.length),
+        const SizedBox(height: 16),
         for (final item in pending)
           ShoppingItemTile(
             item: item,
@@ -122,7 +137,7 @@ class ShoppingListScreenState extends State<ShoppingListScreen> {
                 Text(
                   'Comprados (${checked.length})',
                   style: TextStyle(
-                    color: Colors.grey.shade500,
+                    color: AppColors.onSurfaceVariant,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -146,6 +161,60 @@ class ShoppingListScreenState extends State<ShoppingListScreen> {
   }
 }
 
+class _Header extends StatelessWidget {
+  final int pendingCount;
+
+  const _Header({required this.pendingCount});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        const Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Lista de Compras 🛍️', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              SizedBox(height: 2),
+              Text(
+                'Todo listo para tu próxima salida',
+                style: TextStyle(fontSize: 13, color: AppColors.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: AppColors.secondaryContainer,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(color: AppColors.primaryContainer, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '$pendingCount ${pendingCount == 1 ? 'pendiente' : 'pendientes'}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.onSecondaryContainer,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _EmptyState extends StatelessWidget {
   final VoidCallback onAdd;
 
@@ -159,12 +228,12 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.checklist_rtl, size: 80, color: Colors.grey.shade300),
+            Icon(Icons.checklist_rtl, size: 80, color: AppColors.surfaceContainerHighest),
             const SizedBox(height: 16),
             Text(
               'Tu lista de compras está vacía',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+              style: TextStyle(fontSize: 18, color: AppColors.onSurfaceVariant),
             ),
             const SizedBox(height: 20),
             ElevatedButton.icon(
@@ -172,11 +241,7 @@ class _EmptyState extends StatelessWidget {
               icon: const Icon(Icons.add),
               label: const Text('Agregar algo que te falte'),
               style: ElevatedButton.styleFrom(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               ),
             ),
           ],

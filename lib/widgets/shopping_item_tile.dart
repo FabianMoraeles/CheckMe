@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/item_category.dart';
 import '../models/shopping_item.dart';
+import '../theme/app_theme.dart';
 
 class ShoppingItemTile extends StatelessWidget {
   final ShoppingItem item;
@@ -35,7 +36,7 @@ class ShoppingItemTile extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppColors.surfaceContainerLowest,
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
@@ -58,11 +59,11 @@ class ShoppingItemTile extends StatelessWidget {
                     value: item.checked,
                     onChanged: onToggle,
                     shape: const CircleBorder(),
-                    activeColor: item.category.color,
+                    activeColor: item.category.iconColor,
                   ),
                 ),
                 const SizedBox(width: 8),
-                Icon(item.category.icon, color: item.category.color, size: 20),
+                Icon(item.category.icon, color: item.category.iconColor, size: 20),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
@@ -72,7 +73,7 @@ class ShoppingItemTile extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       decoration:
                           item.checked ? TextDecoration.lineThrough : null,
-                      color: item.checked ? Colors.grey.shade400 : Colors.black87,
+                      color: item.checked ? AppColors.outline : AppColors.onSurface,
                     ),
                   ),
                 ),
