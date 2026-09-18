@@ -4,18 +4,19 @@ import '../models/item_category.dart';
 import '../models/shopping_item.dart';
 import '../theme/app_theme.dart';
 
+/// One row in the shopping list. Checking it off immediately marks the
+/// item as bought: it adds its quantity to the inventory and removes it
+/// from the list, so there is no separate "confirm" step.
 class ShoppingItemTile extends StatelessWidget {
   final ShoppingItem item;
-  final ValueChanged<bool?> onToggle;
+  final VoidCallback onComplete;
   final VoidCallback onDelete;
-  final VoidCallback? onAddToInventory;
 
   const ShoppingItemTile({
     super.key,
     required this.item,
-    required this.onToggle,
+    required this.onComplete,
     required this.onDelete,
-    this.onAddToInventory,
   });
 
   @override
@@ -48,7 +49,7 @@ class ShoppingItemTile extends StatelessWidget {
         ),
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
-          onTap: () => onToggle(!item.checked),
+          onTap: onComplete,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(
@@ -56,8 +57,8 @@ class ShoppingItemTile extends StatelessWidget {
                 Transform.scale(
                   scale: 1.3,
                   child: Checkbox(
-                    value: item.checked,
-                    onChanged: onToggle,
+                    value: false,
+                    onChanged: (_) => onComplete(),
                     shape: const CircleBorder(),
                     activeColor: item.category.iconColor,
                   ),
@@ -68,22 +69,14 @@ class ShoppingItemTile extends StatelessWidget {
                 Expanded(
                   child: Text(
                     item.name,
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600,
-                      decoration:
-                          item.checked ? TextDecoration.lineThrough : null,
-                      color: item.checked ? AppColors.outline : AppColors.onSurface,
-                    ),
+                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
                   ),
                 ),
-                if (item.quantity > 1) ...[
+                if (item.quantity > 1)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: item.checked
-                          ? AppColors.surfaceContainerHigh
-                          : item.category.bgColor,
+                      color: item.category.bgColor,
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
@@ -91,18 +84,9 @@ class ShoppingItemTile extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: item.checked ? AppColors.outline : item.category.labelColor,
+                        color: item.category.labelColor,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                if (item.checked && onAddToInventory != null)
-                  IconButton(
-                    tooltip: 'Agregar a mi inventario',
-                    icon: const Icon(Icons.inventory_2_outlined),
-                    color: Theme.of(context).colorScheme.primary,
-                    onPressed: onAddToInventory,
                   ),
               ],
             ),

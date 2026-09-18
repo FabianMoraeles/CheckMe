@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../models/shopping_group.dart';
 import '../models/shopping_item.dart';
 import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
-import '../widgets/add_item_sheet.dart';
 import '../widgets/shopping_item_tile.dart';
+import 'pick_shopping_items_screen.dart';
 
 class ShoppingListScreen extends StatefulWidget {
   final StorageService? storageService;
@@ -18,6 +19,7 @@ class ShoppingListScreen extends StatefulWidget {
 class ShoppingListScreenState extends State<ShoppingListScreen> {
   late final StorageService _storage = widget.storageService ?? StorageService();
   List<ShoppingItem> _items = [];
+  List<ShoppingGroup> _groups = [];
   bool _loading = true;
   bool _hasError = false;
 
@@ -34,8 +36,10 @@ class ShoppingListScreenState extends State<ShoppingListScreen> {
     });
     try {
       final items = await _storage.loadShoppingList();
+      final groups = await _storage.loadShoppingGroups();
       setState(() {
         _items = items;
+        _groups = groups;
         _loading = false;
       });
     } catch (_) {
@@ -60,37 +64,12 @@ class ShoppingListScreenState extends State<ShoppingListScreen> {
   }
 
   Future<void> addItem() async {
-    final result = await showAddItemSheet(
-      context,
-      title: '¿Qué te falta?',
-      subtitle: 'Se agregará a tu lista de compras',
-      quantityTitle: 'Cantidad a comprar',
-      quantitySubtitle: 'Se sumará a tu inventario cuando la compres',
+    final added = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => PickShoppingItemsScreen(storageService: _storage)),
     );
-    if (result == null) return;
-
-    try {
-      final inserted = await _storage.insertShoppingItem(
-        name: result.name,
-        quantity: result.quantity,
-        category: result.category,
-      );
-      setState(() => _items.add(inserted));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('"${result.name}" agregado a tu lista')),
-        );
-      }
-    } catch (_) {
-      _showSaveError();
+    if (added == true) {
+      await _load();
     }
-  }
-
-  void _toggle(ShoppingItem item, bool? value) {
-    setState(() => item.checked = value ?? false);
-    _storage.updateShoppingItemChecked(item.id, item.checked).catchError((_) {
-      _showSaveError();
-    });
   }
 
   void _delete(ShoppingItem item) {
@@ -100,23 +79,10 @@ class ShoppingListScreenState extends State<ShoppingListScreen> {
     });
   }
 
-  Future<void> _addToInventory(ShoppingItem item) async {
+  Future<void> _complete(ShoppingItem item) async {
+    setState(() => _items.removeWhere((e) => e.id == item.id));
     try {
-      final existing = await _storage.findInventoryItemByName(item.name);
-      if (existing == null) {
-        await _storage.insertInventoryItem(
-          name: item.name,
-          quantity: item.quantity,
-          category: item.category,
-        );
-      } else {
-        await _storage.updateInventoryItemQuantity(
-          existing.id,
-          existing.quantity + item.quantity,
-        );
-      }
-      await _storage.deleteShoppingItem(item.id);
-      setState(() => _items.removeWhere((e) => e.id == item.id));
+      await _storage.completeShoppingItem(item);
       if (mounted) {
         final plural = item.quantity == 1 ? 'unidad' : 'unidades';
         ScaffoldMessenger.of(context).showSnackBar(
@@ -127,16 +93,54 @@ class ShoppingListScreenState extends State<ShoppingListScreen> {
       }
     } catch (_) {
       _showSaveError();
+      await _load();
     }
   }
 
-  Future<void> _clearChecked() async {
-    final removedIds = _items.where((e) => e.checked).map((e) => e.id).toSet();
-    setState(() => _items.removeWhere((e) => removedIds.contains(e.id)));
+  Future<void> _completeGroup(ShoppingGroup group) async {
+    final groupItems = _items.where((e) => e.groupId == group.id).toList();
+    if (groupItems.isEmpty) return;
+    setState(() => _items.removeWhere((e) => e.groupId == group.id));
     try {
-      await _storage.deleteCheckedShoppingItems();
+      for (final item in groupItems) {
+        await _storage.completeShoppingItem(item);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('"${group.name}" completado: todo se agregó a tu inventario')),
+        );
+      }
     } catch (_) {
       _showSaveError();
+      await _load();
+    }
+  }
+
+  Future<void> _deleteGroup(ShoppingGroup group) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('¿Eliminar "${group.name}"?'),
+        content: const Text('Los productos de este grupo se quedan en tu lista, solo se quita la agrupación.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Eliminar')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() {
+      _groups.removeWhere((g) => g.id == group.id);
+      for (final item in _items) {
+        if (item.groupId == group.id) item.groupId = null;
+      }
+    });
+    try {
+      await _storage.deleteShoppingGroup(group.id);
+    } catch (_) {
+      _showSaveError();
+      await _load();
     }
   }
 
@@ -151,50 +155,41 @@ class ShoppingListScreenState extends State<ShoppingListScreen> {
     if (_items.isEmpty) {
       return _EmptyState(onAdd: addItem);
     }
-    final pending = _items.where((e) => !e.checked).toList()
+
+    final ungrouped = _items.where((e) => e.groupId == null).toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-    final checked = _items.where((e) => e.checked).toList()
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+    final groupedByGroupId = <String, List<ShoppingItem>>{};
+    for (final item in _items) {
+      if (item.groupId != null) {
+        groupedByGroupId.putIfAbsent(item.groupId!, () => []).add(item);
+      }
+    }
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
-        _Header(pendingCount: pending.length),
+        _Header(pendingCount: _items.length),
         const SizedBox(height: 16),
-        for (final item in pending)
+        for (final item in ungrouped)
           ShoppingItemTile(
             item: item,
-            onToggle: (v) => _toggle(item, v),
+            onComplete: () => _complete(item),
             onDelete: () => _delete(item),
           ),
-        if (checked.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Comprados (${checked.length})',
-                  style: TextStyle(
-                    color: AppColors.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                TextButton(
-                  onPressed: _clearChecked,
-                  child: const Text('Vaciar'),
-                ),
-              ],
+        for (final group in _groups)
+          if ((groupedByGroupId[group.id] ?? []).isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _GroupSection(
+              group: group,
+              items: groupedByGroupId[group.id]!
+                ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase())),
+              onCompleteAll: () => _completeGroup(group),
+              onDeleteGroup: () => _deleteGroup(group),
+              onCompleteItem: _complete,
+              onDeleteItem: _delete,
             ),
-          ),
-          for (final item in checked)
-            ShoppingItemTile(
-              item: item,
-              onToggle: (v) => _toggle(item, v),
-              onDelete: () => _delete(item),
-              onAddToInventory: () => _addToInventory(item),
-            ),
-        ],
+          ],
       ],
     );
   }
@@ -250,6 +245,73 @@ class _Header extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _GroupSection extends StatelessWidget {
+  final ShoppingGroup group;
+  final List<ShoppingItem> items;
+  final VoidCallback onCompleteAll;
+  final VoidCallback onDeleteGroup;
+  final ValueChanged<ShoppingItem> onCompleteItem;
+  final ValueChanged<ShoppingItem> onDeleteItem;
+
+  const _GroupSection({
+    required this.group,
+    required this.items,
+    required this.onCompleteAll,
+    required this.onDeleteGroup,
+    required this.onCompleteItem,
+    required this.onDeleteItem,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.folder_open, size: 18, color: Theme.of(context).colorScheme.primary),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  '${group.name} (${items.length})',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Eliminar grupo',
+                icon: const Icon(Icons.delete_outline, size: 20),
+                onPressed: onDeleteGroup,
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          for (final item in items)
+            ShoppingItemTile(
+              item: item,
+              onComplete: () => onCompleteItem(item),
+              onDelete: () => onDeleteItem(item),
+            ),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: onCompleteAll,
+              icon: const Icon(Icons.done_all),
+              label: const Text('Completar todo'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
