@@ -87,7 +87,9 @@ class InventoryScreenState extends State<InventoryScreen> {
       context,
       title: 'Agregar nuevo objeto',
       subtitle: 'Control rápido de tu despensa',
-      withQuantity: true,
+      quantityTitle: 'Cantidad inicial',
+      quantitySubtitle: 'Unidades en inventario',
+      showAddToShoppingListToggle: true,
     );
     if (result == null) return;
     setState(() {

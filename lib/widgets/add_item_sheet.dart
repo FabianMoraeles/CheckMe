@@ -21,7 +21,9 @@ Future<AddItemResult?> showAddItemSheet(
   BuildContext context, {
   required String title,
   String subtitle = '',
-  bool withQuantity = false,
+  String quantityTitle = 'Cantidad',
+  String quantitySubtitle = '',
+  bool showAddToShoppingListToggle = false,
 }) {
   return showModalBottomSheet<AddItemResult>(
     context: context,
@@ -34,7 +36,9 @@ Future<AddItemResult?> showAddItemSheet(
       child: _AddItemForm(
         title: title,
         subtitle: subtitle,
-        withQuantity: withQuantity,
+        quantityTitle: quantityTitle,
+        quantitySubtitle: quantitySubtitle,
+        showAddToShoppingListToggle: showAddToShoppingListToggle,
       ),
     ),
   );
@@ -43,12 +47,16 @@ Future<AddItemResult?> showAddItemSheet(
 class _AddItemForm extends StatefulWidget {
   final String title;
   final String subtitle;
-  final bool withQuantity;
+  final String quantityTitle;
+  final String quantitySubtitle;
+  final bool showAddToShoppingListToggle;
 
   const _AddItemForm({
     required this.title,
     required this.subtitle,
-    required this.withQuantity,
+    required this.quantityTitle,
+    required this.quantitySubtitle,
+    required this.showAddToShoppingListToggle,
   });
 
   @override
@@ -147,11 +155,13 @@ class _AddItemFormState extends State<_AddItemForm> {
             ),
             const SizedBox(height: 20),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Nombre del producto',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                const Expanded(
+                  child: Text(
+                    'Nombre del producto',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
                 Text(
                   'Obligatorio',
@@ -204,79 +214,86 @@ class _AddItemFormState extends State<_AddItemForm> {
                 );
               }).toList(),
             ),
-            if (widget.withQuantity) ...[
-              const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Column(
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Cantidad inicial',
-                              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                              widget.quantityTitle,
+                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
                             ),
-                            SizedBox(height: 2),
-                            Text(
-                              'Unidades en inventario',
-                              style: TextStyle(
-                                color: AppColors.onSurfaceVariant,
-                                fontSize: 12,
+                            if (widget.quantitySubtitle.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                widget.quantitySubtitle,
+                                style: TextStyle(
+                                  color: AppColors.onSurfaceVariant,
+                                  fontSize: 12,
+                                ),
                               ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceContainerLowest,
+                          borderRadius: BorderRadius.circular(999),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 6,
                             ),
                           ],
                         ),
-                        Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: AppColors.surfaceContainerLowest,
-                            borderRadius: BorderRadius.circular(999),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.05),
-                                blurRadius: 6,
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            children: [
-                              _QuantityButton(
-                                icon: Icons.remove,
-                                filled: false,
-                                onTap: () {
-                                  if (_quantity > 1) setState(() => _quantity--);
-                                },
-                              ),
-                              SizedBox(
-                                width: 36,
-                                child: Text(
-                                  '$_quantity',
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                        child: Row(
+                          children: [
+                            _QuantityButton(
+                              key: const Key('quantity_decrement'),
+                              icon: Icons.remove,
+                              filled: false,
+                              onTap: () {
+                                if (_quantity > 1) setState(() => _quantity--);
+                              },
+                            ),
+                            SizedBox(
+                              width: 36,
+                              child: Text(
+                                '$_quantity',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              _QuantityButton(
-                                icon: Icons.add,
-                                filled: true,
-                                onTap: () => setState(() => _quantity++),
-                              ),
-                            ],
-                          ),
+                            ),
+                            _QuantityButton(
+                              key: const Key('quantity_increment'),
+                              icon: Icons.add,
+                              filled: true,
+                              onTap: () => setState(() => _quantity++),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
+                  ),
+                  if (widget.showAddToShoppingListToggle) ...[
                     const Divider(height: 28),
                     InkWell(
                       onTap: () => setState(
@@ -302,9 +319,9 @@ class _AddItemFormState extends State<_AddItemForm> {
                       ),
                     ),
                   ],
-                ),
+                ],
               ),
-            ],
+            ),
             const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
@@ -394,6 +411,7 @@ class _QuantityButton extends StatelessWidget {
   final VoidCallback onTap;
 
   const _QuantityButton({
+    super.key,
     required this.icon,
     required this.filled,
     required this.onTap,

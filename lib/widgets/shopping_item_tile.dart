@@ -77,6 +77,26 @@ class ShoppingItemTile extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (item.quantity > 1) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: item.checked
+                          ? AppColors.surfaceContainerHigh
+                          : item.category.bgColor,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '×${item.quantity}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: item.checked ? AppColors.outline : item.category.labelColor,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 if (item.checked && onAddToInventory != null)
                   IconButton(
                     tooltip: 'Agregar a mi inventario',

@@ -46,6 +46,8 @@ class ShoppingListScreenState extends State<ShoppingListScreen> {
       context,
       title: '¿Qué te falta?',
       subtitle: 'Se agregará a tu lista de compras',
+      quantityTitle: 'Cantidad a comprar',
+      quantitySubtitle: 'Se sumará a tu inventario cuando la compres',
     );
     if (result == null) return;
     setState(() {
@@ -53,6 +55,7 @@ class ShoppingListScreenState extends State<ShoppingListScreen> {
         id: DateTime.now().microsecondsSinceEpoch.toString(),
         name: result.name,
         category: result.category,
+        quantity: result.quantity,
       ));
     });
     await _persist();
@@ -83,18 +86,21 @@ class ShoppingListScreenState extends State<ShoppingListScreen> {
       inventory.add(InventoryItem(
         id: DateTime.now().microsecondsSinceEpoch.toString(),
         name: item.name,
-        quantity: 1,
+        quantity: item.quantity,
         category: item.category,
       ));
     } else {
-      existing.quantity++;
+      existing.quantity += item.quantity;
     }
     await _storage.saveInventory(inventory);
     setState(() => _items.removeWhere((e) => e.id == item.id));
     await _persist();
     if (mounted) {
+      final plural = item.quantity == 1 ? 'unidad' : 'unidades';
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('"${item.name}" agregado a tu inventario')),
+        SnackBar(
+          content: Text('${item.quantity} $plural de "${item.name}" agregadas a tu inventario'),
+        ),
       );
     }
   }
