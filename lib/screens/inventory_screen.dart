@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../models/inventory_item.dart';
 import '../models/item_category.dart';
-import '../models/shopping_item.dart';
 import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/add_item_sheet.dart';
@@ -36,18 +35,24 @@ class _Filter {
 
 class InventoryScreen extends StatefulWidget {
   final VoidCallback onViewShoppingList;
+  final StorageService? storageService;
 
-  const InventoryScreen({super.key, required this.onViewShoppingList});
+  const InventoryScreen({
+    super.key,
+    required this.onViewShoppingList,
+    this.storageService,
+  });
 
   @override
   State<InventoryScreen> createState() => InventoryScreenState();
 }
 
 class InventoryScreenState extends State<InventoryScreen> {
-  final _storage = StorageService();
+  late final StorageService _storage = widget.storageService ?? StorageService();
   final _searchController = TextEditingController();
   List<InventoryItem> _items = [];
   bool _loading = true;
+  bool _hasError = false;
   _Filter _filter = const _Filter.all();
   String _query = '';
 
@@ -67,11 +72,22 @@ class InventoryScreenState extends State<InventoryScreen> {
   }
 
   Future<void> _load() async {
-    final items = await _storage.loadInventory();
     setState(() {
-      _items = items;
-      _loading = false;
+      _loading = true;
+      _hasError = false;
     });
+    try {
+      final items = await _storage.loadInventory();
+      setState(() {
+        _items = items;
+        _loading = false;
+      });
+    } catch (_) {
+      setState(() {
+        _loading = false;
+        _hasError = true;
+      });
+    }
   }
 
   /// Re-reads from storage. Needed because this screen and the shopping
@@ -80,7 +96,12 @@ class InventoryScreenState extends State<InventoryScreen> {
   /// until it reloads.
   Future<void> reload() => _load();
 
-  Future<void> _persist() => _storage.saveInventory(_items);
+  void _showSaveError() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('No se pudo guardar el cambio. Revisa tu conexión.')),
+    );
+  }
 
   Future<void> addItem() async {
     final result = await showAddItemSheet(
@@ -92,65 +113,72 @@ class InventoryScreenState extends State<InventoryScreen> {
       showAddToShoppingListToggle: true,
     );
     if (result == null) return;
-    setState(() {
-      _items.add(InventoryItem(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
+
+    try {
+      final inserted = await _storage.insertInventoryItem(
         name: result.name,
         quantity: result.quantity,
         category: result.category,
-      ));
-    });
-    await _persist();
-
-    if (result.alsoAddToShoppingList) {
-      final shoppingItems = await _storage.loadShoppingList();
-      shoppingItems.add(ShoppingItem(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
-        name: result.name,
-        category: result.category,
-      ));
-      await _storage.saveShoppingList(shoppingItems);
-    }
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('"${result.name}" agregado a tu despensa')),
       );
+      setState(() => _items.add(inserted));
+
+      if (result.alsoAddToShoppingList) {
+        await _storage.insertShoppingItem(
+          name: result.name,
+          quantity: 1,
+          category: result.category,
+        );
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('"${result.name}" agregado a tu despensa')),
+        );
+      }
+    } catch (_) {
+      _showSaveError();
     }
   }
 
   void _increment(InventoryItem item) {
     setState(() => item.quantity++);
-    _persist();
+    _storage.updateInventoryItemQuantity(item.id, item.quantity).catchError((_) {
+      _showSaveError();
+    });
   }
 
   void _decrement(InventoryItem item) {
     if (item.quantity == 0) return;
     setState(() => item.quantity--);
-    _persist();
+    _storage.updateInventoryItemQuantity(item.id, item.quantity).catchError((_) {
+      _showSaveError();
+    });
   }
 
   void _delete(InventoryItem item) {
     setState(() => _items.removeWhere((e) => e.id == item.id));
-    _persist();
+    _storage.deleteInventoryItem(item.id).catchError((_) {
+      _showSaveError();
+    });
   }
 
   Future<void> _addToShoppingList(InventoryItem item) async {
-    final shoppingItems = await _storage.loadShoppingList();
-    final alreadyThere =
-        shoppingItems.any((e) => e.name.toLowerCase() == item.name.toLowerCase());
-    if (!alreadyThere) {
-      shoppingItems.add(ShoppingItem(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
-        name: item.name,
-        category: item.category,
-      ));
-      await _storage.saveShoppingList(shoppingItems);
-    }
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('"${item.name}" agregado a tu lista de compras')),
-      );
+    try {
+      final alreadyThere = await _storage.shoppingListHasItemNamed(item.name);
+      if (!alreadyThere) {
+        await _storage.insertShoppingItem(
+          name: item.name,
+          quantity: 1,
+          category: item.category,
+        );
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('"${item.name}" agregado a tu lista de compras')),
+        );
+      }
+    } catch (_) {
+      _showSaveError();
     }
   }
 
@@ -177,6 +205,9 @@ class InventoryScreenState extends State<InventoryScreen> {
   Widget build(BuildContext context) {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
+    }
+    if (_hasError) {
+      return _ErrorState(onRetry: _load);
     }
     if (_items.isEmpty) {
       return _EmptyState(onAdd: addItem);
@@ -535,6 +566,42 @@ class _QuickReplenishBar extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ErrorState extends StatelessWidget {
+  final VoidCallback onRetry;
+
+  const _ErrorState({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_off, size: 80, color: AppColors.surfaceContainerHighest),
+            const SizedBox(height: 16),
+            Text(
+              'No pudimos cargar tu despensa. Revisa tu conexión.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 16, color: AppColors.onSurfaceVariant),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Reintentar'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

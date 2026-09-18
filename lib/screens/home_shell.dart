@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
 import 'inventory_screen.dart';
 import 'shopping_list_screen.dart';
 
 class HomeShell extends StatefulWidget {
-  const HomeShell({super.key});
+  final StorageService? storageService;
+
+  const HomeShell({super.key, this.storageService});
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -95,8 +98,12 @@ class _HomeShellState extends State<HomeShell> {
       body: IndexedStack(
         index: _index,
         children: [
-          InventoryScreen(key: _inventoryKey, onViewShoppingList: _goToShoppingList),
-          ShoppingListScreen(key: _shoppingKey),
+          InventoryScreen(
+            key: _inventoryKey,
+            onViewShoppingList: _goToShoppingList,
+            storageService: widget.storageService,
+          ),
+          ShoppingListScreen(key: _shoppingKey, storageService: widget.storageService),
         ],
       ),
       bottomNavigationBar: SafeArea(

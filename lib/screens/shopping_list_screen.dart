@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../models/inventory_item.dart';
 import '../models/shopping_item.dart';
 import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
@@ -8,16 +7,19 @@ import '../widgets/add_item_sheet.dart';
 import '../widgets/shopping_item_tile.dart';
 
 class ShoppingListScreen extends StatefulWidget {
-  const ShoppingListScreen({super.key});
+  final StorageService? storageService;
+
+  const ShoppingListScreen({super.key, this.storageService});
 
   @override
   State<ShoppingListScreen> createState() => ShoppingListScreenState();
 }
 
 class ShoppingListScreenState extends State<ShoppingListScreen> {
-  final _storage = StorageService();
+  late final StorageService _storage = widget.storageService ?? StorageService();
   List<ShoppingItem> _items = [];
   bool _loading = true;
+  bool _hasError = false;
 
   @override
   void initState() {
@@ -26,11 +28,22 @@ class ShoppingListScreenState extends State<ShoppingListScreen> {
   }
 
   Future<void> _load() async {
-    final items = await _storage.loadShoppingList();
     setState(() {
-      _items = items;
-      _loading = false;
+      _loading = true;
+      _hasError = false;
     });
+    try {
+      final items = await _storage.loadShoppingList();
+      setState(() {
+        _items = items;
+        _loading = false;
+      });
+    } catch (_) {
+      setState(() {
+        _loading = false;
+        _hasError = true;
+      });
+    }
   }
 
   /// Re-reads from storage. Needed because this screen and the inventory
@@ -39,7 +52,12 @@ class ShoppingListScreenState extends State<ShoppingListScreen> {
   /// reloads.
   Future<void> reload() => _load();
 
-  Future<void> _persist() => _storage.saveShoppingList(_items);
+  void _showSaveError() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('No se pudo guardar el cambio. Revisa tu conexión.')),
+    );
+  }
 
   Future<void> addItem() async {
     final result = await showAddItemSheet(
@@ -50,70 +68,85 @@ class ShoppingListScreenState extends State<ShoppingListScreen> {
       quantitySubtitle: 'Se sumará a tu inventario cuando la compres',
     );
     if (result == null) return;
-    setState(() {
-      _items.add(ShoppingItem(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
+
+    try {
+      final inserted = await _storage.insertShoppingItem(
         name: result.name,
-        category: result.category,
         quantity: result.quantity,
-      ));
-    });
-    await _persist();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('"${result.name}" agregado a tu lista')),
+        category: result.category,
       );
+      setState(() => _items.add(inserted));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('"${result.name}" agregado a tu lista')),
+        );
+      }
+    } catch (_) {
+      _showSaveError();
     }
   }
 
   void _toggle(ShoppingItem item, bool? value) {
     setState(() => item.checked = value ?? false);
-    _persist();
+    _storage.updateShoppingItemChecked(item.id, item.checked).catchError((_) {
+      _showSaveError();
+    });
   }
 
   void _delete(ShoppingItem item) {
     setState(() => _items.removeWhere((e) => e.id == item.id));
-    _persist();
+    _storage.deleteShoppingItem(item.id).catchError((_) {
+      _showSaveError();
+    });
   }
 
   Future<void> _addToInventory(ShoppingItem item) async {
-    final inventory = await _storage.loadInventory();
-    final existing = inventory.firstWhere(
-      (e) => e.name.toLowerCase() == item.name.toLowerCase(),
-      orElse: () => InventoryItem(id: '', name: '', quantity: 0, category: item.category),
-    );
-    if (existing.id.isEmpty) {
-      inventory.add(InventoryItem(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
-        name: item.name,
-        quantity: item.quantity,
-        category: item.category,
-      ));
-    } else {
-      existing.quantity += item.quantity;
-    }
-    await _storage.saveInventory(inventory);
-    setState(() => _items.removeWhere((e) => e.id == item.id));
-    await _persist();
-    if (mounted) {
-      final plural = item.quantity == 1 ? 'unidad' : 'unidades';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${item.quantity} $plural de "${item.name}" agregadas a tu inventario'),
-        ),
-      );
+    try {
+      final existing = await _storage.findInventoryItemByName(item.name);
+      if (existing == null) {
+        await _storage.insertInventoryItem(
+          name: item.name,
+          quantity: item.quantity,
+          category: item.category,
+        );
+      } else {
+        await _storage.updateInventoryItemQuantity(
+          existing.id,
+          existing.quantity + item.quantity,
+        );
+      }
+      await _storage.deleteShoppingItem(item.id);
+      setState(() => _items.removeWhere((e) => e.id == item.id));
+      if (mounted) {
+        final plural = item.quantity == 1 ? 'unidad' : 'unidades';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${item.quantity} $plural de "${item.name}" agregadas a tu inventario'),
+          ),
+        );
+      }
+    } catch (_) {
+      _showSaveError();
     }
   }
 
   Future<void> _clearChecked() async {
-    setState(() => _items.removeWhere((e) => e.checked));
-    await _persist();
+    final removedIds = _items.where((e) => e.checked).map((e) => e.id).toSet();
+    setState(() => _items.removeWhere((e) => removedIds.contains(e.id)));
+    try {
+      await _storage.deleteCheckedShoppingItems();
+    } catch (_) {
+      _showSaveError();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
+    }
+    if (_hasError) {
+      return _ErrorState(onRetry: _load);
     }
     if (_items.isEmpty) {
       return _EmptyState(onAdd: addItem);
@@ -217,6 +250,42 @@ class _Header extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ErrorState extends StatelessWidget {
+  final VoidCallback onRetry;
+
+  const _ErrorState({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_off, size: 80, color: AppColors.surfaceContainerHighest),
+            const SizedBox(height: 16),
+            Text(
+              'No pudimos cargar tu lista. Revisa tu conexión.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 16, color: AppColors.onSurfaceVariant),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Reintentar'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
